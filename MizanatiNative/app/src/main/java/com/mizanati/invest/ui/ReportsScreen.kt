@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,8 @@ private val reportTabs = listOf(
     "freedom" to "الحرية المالية", "goals" to "أهداف مستقبلية",
 )
 
+private val reportIcons = listOf("📈", "📋", "🗂", "↔", "🛡", "📅", "🎯", "🏳")
+
 @Composable
 fun ReportsScreen(s: AppState, onMutate: ((AppState) -> Unit) -> Unit, onExportExcel: () -> Unit, onExportTemplate: () -> Unit) {
     val t = LocalTheme
@@ -40,7 +43,10 @@ fun ReportsScreen(s: AppState, onMutate: ((AppState) -> Unit) -> Unit, onExportE
     var sortBy by remember { mutableStateOf("xirr") }
 
     Column(Modifier.fillMaxSize().background(t.bg).padding(16.dp)) {
-        TabStrip(reportTabs, tab) { tab = it }
+        Text("التقارير والأدوات", color = t.text, fontSize = 26.sp, fontWeight = FontWeight.Black)
+        Muted("تحليلات استثمارية وأدوات تخطيط مالي", size = 12)
+        Spacer(Modifier.height(12.dp))
+        ReportTileGrid(reportTabs, tab) { tab = it }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (reportTabs[tab].first) {
@@ -56,6 +62,34 @@ fun ReportsScreen(s: AppState, onMutate: ((AppState) -> Unit) -> Unit, onExportE
         }
     }
 }
+
+@Composable
+fun ReportTileGrid(tabs: List<Pair<String, String>>, current: Int, on: (Int) -> Unit) {
+    val t = LocalTheme
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        chunks(tabs).forEachIndexed { rowIx, row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEachIndexed { colIx, (key, label) ->
+                    val i = rowIx * 4 + colIx
+                    val sel = i == current
+                    Column(
+                        Modifier.weight(1f).background(if (sel) t.card else t.card2, chipShape)
+                            .border(if (sel) 2.dp else 1.dp, if (sel) t.primary else t.border, chipShape)
+                            .clickable { on(i) }.padding(vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(reportIcons[i], fontSize = 20.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Text(label, color = if (sel) t.primary else t.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun <T> chunks(list: List<T>): List<List<T>> =
+    if (list.size <= 4) listOf(list) else listOf(list.subList(0, 4), list.subList(4, list.size))
 
 // ---------- الملخص: نقاط + بلوكات + تنبيهات ----------
 
@@ -76,25 +110,34 @@ private fun ScoreTab(s: AppState) {
         score >= 40 -> "يحتاج متابعة"
         else -> "يحتاج اهتمامًا"
     }
-    Card2 {
+    Column(
+        Modifier.fillMaxWidth().background(
+            Brush.verticalGradient(listOf(Color(0xFF3D35A6), Color(0xFF6D5BD0))), bigShape,
+        ).padding(18.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Ring(score / 100f, "#${Integer.toHexString((col.hashCode()) and 0xFFFFFF)}", 84f)
+            Box(Modifier.weight(1f))
+            Ring(score / 100f, "#A3E635", 84f)
             Spacer(Modifier.width(14.dp))
-            Column {
-                Text("$score / 100", color = col, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text(grade, color = col, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Muted("تقييم مركب من الأداء والتنويع والعملات والانتظام", size = 10)
+            Column(horizontalAlignment = Alignment.End) {
+                Text("درجة الصحة الاستثمارية", color = Color(0xFFD8D4FF), fontSize = 12.sp)
+                Text("$score", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                Text(grade, color = Color(0xFFA3E635), fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
+        Text("ملخص سريع لتوازن استثمارك عبر 6 مؤشرات", color = Color(0xFFD8D4FF), fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("المؤشرات الستة", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
         parts.forEach { (name, v, _, sub) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(name, color = t.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Muted(sub, size = 10)
-                    Bar((v?.toFloat() ?: 0f), "#635bff")
+            Column(Modifier.fillMaxWidth().padding(vertical = 5.dp).background(Color(0x33FFFFFF), chipShape).padding(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(if (v == null) "—" else pc(v * 100, 0), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
-                Text(if (v == null) "—" else pc(v * 100, 0), color = t.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Bar((v?.toFloat() ?: 0f), "#A3E635")
             }
         }
     }

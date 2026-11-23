@@ -5,13 +5,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -107,29 +111,68 @@ class MainActivity : ComponentActivity() {
             Scaffold(
                 containerColor = t.bg,
                 topBar = {
-                    Column(Modifier.fillMaxWidth().background(t.card).statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Text("MIZANATI INVEST", color = t.text, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Muted("ميزانيتي · إدارة واستثمار", size = 11)
+                    Row(
+                        Modifier.fillMaxWidth().background(t.bg).statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        // theme toggle (moon), like the original
+                        Text(
+                            if (state.theme == "dark") "☀" else "🌙", fontSize = 18.sp,
+                            modifier = Modifier
+                                .background(t.card, RoundedCornerShape(14.dp))
+                                .border(1.dp, t.primary, RoundedCornerShape(14.dp))
+                                .clickable { mutate { it.theme = if (state.theme == "dark") "light" else "dark" } }
+                                .padding(10.dp),
+                        )
+                        Box(Modifier.weight(1f), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text("INVEST", color = t.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.background(t.card2, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("ميزانيتي", color = t.text, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                                }
+                                Text("${state.owner.ifBlank { "أهلاً محمد" }} · ثروتك تحت السيطرة", color = t.muted, fontSize = 11.sp)
+                            }
+                        }
+                        Text(
+                            "📊", fontSize = 17.sp,
+                            modifier = Modifier.background(
+                                Brush.linearGradient(listOf(Color(0xFF6C5CE7), Color(0xFF00B894))),
+                                RoundedCornerShape(14.dp),
+                            ).padding(10.dp),
+                        )
                     }
                 },
                 bottomBar = {
                     Column(Modifier.fillMaxWidth().background(t.card).navigationBarsPadding()) {
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                            listOf("المحافظ", "التقارير والأدوات", "الإعدادات").forEachIndexed { i, label ->
-                                Text(
-                                    label,
-                                    color = if (section == i) t.primary else t.muted,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (section == i) FontWeight.Bold else FontWeight.Normal,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val tabs = listOf("💳" to "المحافظ", "📊" to "التقارير والأدوات", "⚙" to "الإعدادات")
+                            tabs.forEachIndexed { i, (icon, label) ->
+                                val sel = section == i
+                                Column(
+                                    Modifier
                                         .weight(1f)
+                                        .background(if (sel) t.card2 else Color.Transparent, RoundedCornerShape(14.dp))
                                         .clickable(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
                                         ) { section = i; openPf = null; analysis = null; emergencyOpen = false }
-                                        .padding(vertical = 10.dp),
-                                )
+                                        .padding(vertical = 8.dp),
+                                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                                ) {
+                                    Text(icon, fontSize = 20.sp,
+                                        modifier = Modifier
+                                            .background(if (sel) t.primary else Color.Transparent, RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 14.dp, vertical = 5.dp))
+                                    Text(
+                                        label,
+                                        color = if (sel) t.primary else t.muted,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
                         }
                     }
@@ -171,6 +214,7 @@ class MainActivity : ComponentActivity() {
                                 catch (e: Exception) { fxMsg = "استيراد غير صالح: ${e.message}" }
                             },
                             onExportExcel = { exportExcel(false) },
+                            onExportTemplate = { exportExcel(true) },
                         )
                     }
                 }

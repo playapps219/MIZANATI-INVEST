@@ -118,6 +118,7 @@ data class AppState(
     var inflation: Double = 0.0,
     var inflationMonthly: Double = 0.0,
     var inflationPeriod: String = "",
+    var owner: String = "",
 )
 
 fun uid(): String = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8)
@@ -151,6 +152,7 @@ object StateJson {
         o.put("split", s.split); o.put("v6", s.v6); o.put("theme", s.theme)
         o.put("inflation", s.inflation); o.put("inflationMonthly", s.inflationMonthly)
         o.put("inflationPeriod", s.inflationPeriod)
+        o.put("owner", s.owner)
         o.put("fx", JSONObject().apply {
             put("book", s.fx.book); put("bookDate", s.fx.bookDate)
             put("now", s.fx.now); put("upd", s.fx.upd)
@@ -231,6 +233,7 @@ object StateJson {
         s.inflation = o.optDouble("inflation", 0.0)
         s.inflationMonthly = o.optDouble("inflationMonthly", 0.0)
         s.inflationPeriod = o.optString("inflationPeriod", "")
+        s.owner = o.optString("owner", "")
         o.optJSONObject("fx")?.let { f ->
             s.fx = Fx(
                 book = f.optDouble("book", 50.0), bookDate = f.optString("bookDate"),

@@ -10,10 +10,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,9 +21,18 @@ import com.mizanati.invest.calc.Finance
 import com.mizanati.invest.calc.Finance.fmt
 import com.mizanati.invest.calc.Finance.pc
 import com.mizanati.invest.data.AppState
+import com.mizanati.invest.data.Portfolio
 
-// Home (الملخص) — top KPI cards, portfolio cards with progress rings, analysis center,
-// fx impact card, emergency fund panel. Mirrors the original dashboard.
+// Home (المحافظ) — control-panel hero card, 6 KPI stat cards, net-fx profit card,
+// rotating advice banner, portfolios entry + emergency + analysis center.
+
+private val tips = listOf(
+    Triple("✨", "فَكّر في الاستثمار كمملكة طويلة الأجل، لا كضغطة قصيرة.", "مستوحى من رسالة وارن بافيت للمساهمين، 1996"),
+    Triple("✨", "الصبر جزء من الخطط؛ لا تُدع تقلبات اليوم تقرر مستقبل محفظتك.", "مستوحى من مبادئ التشارك المنضبط في الأسبر"),
+    Triple("✨", "وزّع محفظتك بين الدولار والجنيه بحسب هدفك لا بحسب أخبار اليوم.", "قاعدة توزيع العملات في التخطيط المالي"),
+    Triple("✨", "راجع أدواتك كل فترة، وقِس العائد الحقيقي بالـ XIRR لا بالإحساس.", "ميزانيتي · أدوات القياس"),
+    Triple("✨", "ابنِ صندوق طوارئ يكفي 3–6 أشهر قبل أي استثمار جديد.", "قاعدة الأمان المالي"),
+)
 
 @Composable
 fun HomeScreen(
@@ -38,127 +47,176 @@ fun HomeScreen(
     val tot = Finance.totals(s)
     val ef = s.emergencyFund
     val efBal = Finance.efBalance(ef)
+    var tipIx by remember { mutableIntStateOf(0) }
 
-    Column(
-        Modifier.fillMaxSize().background(t.bg).verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // ==== hero totals ====
-        Card2 {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Muted("إجمالي القيمة الحالية", size = 11)
-                    Text("${fmt(tot.value, 0)} ج", color = t.text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    val profitTxt = "${if (tot.profit >= 0) "+" else ""}${fmt(tot.profit, 0)} ج (${pc(tot.pct)})"
-                    Text(profitTxt, color = if (tot.profit >= 0) t.green else t.red, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Muted("إجمالي المستثمر", size = 11)
-                    Text("${fmt(tot.cost, 0)} ج", color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Muted("بالدولار ≈ $${fmt(tot.valueUsd, 0)}", size = 11)
-                }
-            }
-            if (!tot.xirr.isNaN()) {
-                Spacer(Modifier.height(6.dp))
-                Muted("العائد السنوي المركب XIRR: ${pc(tot.xirr)}", size = 12)
-            }
-        }
+    // fx effects aggregated across portfolios, split by currency (like the original dashboard)
+    var fxUsd = 0.0; var fxEgp = 0.0
+    s.pfs.filter { it.showHome && !it.isEmergency }.forEach { p ->
+        val st = Finance.pfStats(p, s.ins, s.fx.now)
+        if (p.cur == "USD") fxUsd += st.fxEffect else fxEgp += st.fxEffect
+    }
+    val netFx = fxUsd + fxEgp / s.fx.now
 
-        // ==== FX card ====
-        Card2 {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Muted("سعر الدولار الحالي", size = 11)
-                    Text("${fmt(s.fx.now, 2)} ج", color = t.text, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                    Muted(if (s.fx.upd.isNotBlank()) "آخر تحديث: ${s.fx.upd}" else "لم يتم التحديث بعد", size = 11)
-                }
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxSize().background(t.bg).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // ==== hero control panel ====
+            Column(
+                Modifier.fillMaxWidth().background(
+                    Brush.verticalGradient(listOf(Color(0xFFEAF0FF), t.card)), bigShape,
+                ).border(1.dp, t.border, bigShape).padding(18.dp),
+            ) {
                 Text(
-                    "تحديث", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.background(t.primary, chipShape).clickable { onRefreshFx() }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    "لوحة تتحكم بجميع المحافظ",
+                    color = t.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.background(t.card2, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 12.dp, vertical = 5.dp).align(Alignment.CenterHorizontally),
                 )
-            }
-            if (fxMsg.isNotBlank()) { Spacer(Modifier.height(6.dp)); Muted(fxMsg, size = 11) }
-            if (s.fx.book > 0) {
-                val chg = (s.fx.now - s.fx.book) / s.fx.book * 100
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "منذ سعر البدء (${fmt(s.fx.book, 2)} ج بتاريخ ${s.fx.bookDate}): ${if (chg >= 0) "+" else ""}${pc(chg)}",
-                    color = if (chg >= 0) t.green else t.red, fontSize = 12.sp,
-                )
-            }
-        }
-
-        // ==== portfolio cards ====
-        s.pfs.filter { it.showHome && !it.isEmergency }.forEach { p ->
-            val st = Finance.pfStats(p, s.ins, s.fx.now)
-            val target = p.tAmt
-            val progress = if (target > 0) (st.value / target).coerceIn(0.0, 1.0).toFloat() else 0f
-            Card2(Modifier.clickable { onOpenPortfolio(p.id) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(14.dp).background(
-                            try { Color(android.graphics.Color.parseColor(p.col)) } catch (e: Exception) { t.primary },
-                            CircleShape,
-                        ),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(p.name, color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        Muted(if (p.cur == "USD") "بالدولار · ${fmt(st.value / s.fx.now, 0)} $" else "بالجنيه", size = 11)
-                    }
-                    if (target > 0) Ring(progress, p.col, 52f)
-                }
                 Spacer(Modifier.height(8.dp))
-                Row3(
-                    "المستثمر" to "${fmt(st.cost, 0)} ${Finance.curSym(p.cur)}",
-                    "القيمة" to "${fmt(st.value, 0)} ${Finance.curSym(p.cur)}",
-                    "الربح" to (if (st.total.isNaN()) "—" else "${fmt(st.total, 0)} ${Finance.curSym(p.cur)}"),
+                Text(
+                    "$${fmt(tot.valueUsd, 0)}",
+                    color = t.text, fontSize = 40.sp, fontWeight = FontWeight.Black,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Muted("XIRR: ${pc(st.xr)}", size = 11)
-                    if (target > 0) Muted("الهدف: ${fmt(target, 0)} (${pc(st.value / target * 100, 0)})", size = 11)
-                    if (!st.fxEffect.isNaN() && kotlin.math.abs(st.fxEffect) > 1) {
+                Text(
+                    "≈ ج${fmt(tot.value, 0)} بسعر ${fmt(s.fx.now, 2)}",
+                    color = t.muted, fontSize = 13.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Spacer(Modifier.height(14.dp))
+                // 2 rows × 3 stat cards
+                StatRow(
+                    listOf(
+                        "أثر الصرف الدولار (ج)" to fmt(fxUsd, 0),
+                        "أثر الصرف الجنيه ($)" to fmt(fxEgp, 0),
+                        "نسبة الربح" to pc(tot.pct),
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                StatRow(
+                    listOf(
+                        "XIRR الإجمالي (بسعر الجملة الحقيقي)" to (if (tot.xirr.isNaN()) "—" else pc(tot.xirr)),
+                        "إجمالي الربح (محقق + متوقع)" to "$${fmt(tot.profit / s.fx.now, 0)}",
+                        "سعر الصرف" to fmt(s.fx.now, 2),
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                // net fx profit card
+                Row(
+                    Modifier.fillMaxWidth().background(t.card, bigShape).border(1.dp, t.border, bigShape).padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💱", fontSize = 15.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "صافي ربح الصرف (مكسب الدولاري − خسارة الجنيهي)",
+                                color = t.text, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
                         Text(
-                            "أثر الصرف: ${fmt(st.fxEffect, 0)} ${Finance.curSym(p.cur)}",
-                            color = if (st.fxEffect >= 0) t.green else t.red,
-                            fontSize = 11.sp,
+                            "$${fmt(netFx, 0)}",
+                            color = if (netFx >= 0) t.green else t.red, fontSize = 26.sp, fontWeight = FontWeight.Black,
                         )
                     }
+                    Text(
+                        "ج${fmt(netFx * s.fx.now, 0)} ≈",
+                        color = t.muted, fontSize = 13.sp,
+                        modifier = Modifier.background(t.card2, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
                 }
             }
-        }
 
-        // ==== emergency fund ====
-        if (ef.include) {
-            Card2(Modifier.clickable { onOpenEmergency() }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🛟", fontSize = 22.sp)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("صندوق الطوارئ", color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        Muted("الرصيد: ${fmt(efBal, 0)} ${Finance.curSym(ef.currency)}", size = 11)
-                    }
-                    val x = Finance.efXirr(ef)
-                    if (!x.isNaN()) Text(pc(x), color = t.green, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            // ==== rotating advice banner ====
+            Row(
+                Modifier.fillMaxWidth().background(
+                    Brush.horizontalGradient(listOf(Color(0xFF3B2FA3), Color(0xFF1F8FB4))), RoundedCornerShape(18.dp),
+                ).clickable { tipIx = (tipIx + 1) % tips.size }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(tips[tipIx].first + " استثمر بوعي", color = Color(0xFFFFD75E), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(tips[tipIx].second, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(tips[tipIx].third, color = Color(0xB3FFFFFF), fontSize = 10.sp)
                 }
+                Text(
+                    "↗", color = Color.White, fontSize = 20.sp,
+                    modifier = Modifier.background(Color(0x33FFFFFF), CircleShape).padding(10.dp),
+                )
+            }
+
+            // ==== portfolios entry ====
+            PortfolioEntry("🏦", "المحافظ الاستثمارية",
+                "${s.pfs.count { !it.isEmergency }} محافظ · اضغط لفتح القائمة كاملة") {
+                s.pfs.firstOrNull { !it.isEmergency }?.let { onOpenPortfolio(it.id) }
+            }
+            if (ef.include) PortfolioEntry("🛟", "المحافظ الاستثمارية — صندوق الطوارئ",
+                "الرصيد: ${fmt(efBal, 0)} ${Finance.curSym(ef.currency)}", onClick = onOpenEmergency)
+
+            // ==== analysis center ====
+            PortfolioEntry("✦", "مركز التحليل", "المؤشرات الاستثمارية وأدوات التخطيط المالي") { onOpenAnalysis("xirr") }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnalysisTile("📈", "الأداء والعوائد", "XIRR وربح كل أداة ومحفظة") { onOpenAnalysis("xirr") }
+                AnalysisTile("🥧", "توزيع المحافظ", "حصة كل محفظة من القيمة") { onOpenAnalysis("pf") }
+                AnalysisTile("💱", "توزيع العملات", "نسبة الدولار مقابل المستهدف ${s.split}%") { onOpenAnalysis("cur") }
+                AnalysisTile("🗂", "بيانات الأدوات", "جدول كل الأدوات بعملتين") { onOpenAnalysis("all") }
+                AnalysisTile("🧭", "بوصلة التركيز", "تركّز أكبر الأدوات ومخاطره") { onOpenAnalysis("focus") }
+                AnalysisTile("📊", "نمو العوائد", "تطور القيمة والأرباح شهريًا") { onOpenAnalysis("growth") }
+            }
+
+            Muted("MIZANATI INVEST · v1.2.5", size = 11, modifier = Modifier.align(Alignment.CenterHorizontally))
+            if (fxMsg.isNotBlank()) Muted(fxMsg, size = 11)
+        }
+        // floating +
+        Text(
+            "+", color = t.primary, fontSize = 26.sp, fontWeight = FontWeight.Black,
+            modifier = Modifier.align(Alignment.BottomStart).padding(18.dp)
+                .background(t.card, CircleShape).border(1.dp, t.border, CircleShape)
+                .clickable { s.pfs.firstOrNull { !it.isEmergency }?.let { onOpenPortfolio(it.id) } }
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun StatRow(items: List<Pair<String, String>>) {
+    val t = LocalTheme
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.forEach { (k, v) ->
+            Column(
+                Modifier.weight(1f).background(t.card, chipShape).border(1.dp, t.border, chipShape).padding(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(k, color = t.muted, fontSize = 10.sp, maxLines = 2)
+                Spacer(Modifier.height(4.dp))
+                Text(v, color = t.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
 
-        // ==== analysis center tiles ====
-        SectionTitle("مركز التحليلات")
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnalysisTile("📈", "الأداء والعوائد", "XIRR وربح كل أداة ومحفظة") { onOpenAnalysis("xirr") }
-            AnalysisTile("🥧", "توزيع المحافظ", "حصة كل محفظة من القيمة") { onOpenAnalysis("pf") }
-            AnalysisTile("💱", "توزيع العملات", "نسبة الدولار مقابل المستهدف ${s.split}%") { onOpenAnalysis("cur") }
-            AnalysisTile("🗂", "بيانات الأدوات", "جدول كل الأدوات بعملتين") { onOpenAnalysis("all") }
-            AnalysisTile("🧭", "بوصلة التركيز", "تركّز أكبر الأدوات ومخاطره") { onOpenAnalysis("focus") }
-            AnalysisTile("📊", "نمو العوائد", "تطور القيمة والأرباح شهريًا") { onOpenAnalysis("growth") }
+@Composable
+fun PortfolioEntry(icon: String, title: String, sub: String, onClick: () -> Unit) {
+    val t = LocalTheme
+    Row(
+        Modifier.fillMaxWidth().background(t.card, RoundedCornerShape(18.dp))
+            .border(1.dp, t.border, RoundedCornerShape(18.dp))
+            .clickable { onClick() }.padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, fontSize = 22.sp, modifier = Modifier.background(t.card2, RoundedCornerShape(12.dp)).padding(10.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = t.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(sub, color = t.muted, fontSize = 12.sp)
         }
-
-        Muted("MIZANATI INVEST · v1.2.5", size = 11, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Text("←", color = t.primary, fontSize = 18.sp)
     }
 }
 
@@ -168,9 +226,9 @@ fun Ring(v: Float, colorHex: String, sizePx: Float = 52f) {
     val col = try { Color(android.graphics.Color.parseColor(colorHex)) } catch (e: Exception) { t.primary }
     androidx.compose.foundation.Canvas(Modifier.size(sizePx.dp)) {
         drawArc(color = t.border.copy(alpha = .5f), startAngle = -90f, sweepAngle = 360f, useCenter = false,
-            style = Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
         drawArc(color = col, startAngle = -90f, sweepAngle = 360f * v.coerceIn(0f, 1f), useCenter = false,
-            style = Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
@@ -191,3 +249,5 @@ fun AnalysisTile(icon: String, title: String, sub: String, onClick: () -> Unit) 
         Text("‹", color = t.muted, fontSize = 20.sp)
     }
 }
+
+val bigShape = RoundedCornerShape(20.dp)
