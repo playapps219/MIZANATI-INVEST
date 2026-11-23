@@ -45,6 +45,11 @@ fun PortfolioScreen(
     var txNote by remember { mutableStateOf("") }
     var editCvFor by remember { mutableStateOf<Instrument?>(null) }
     var cvVal by remember { mutableStateOf("") }
+    var editInstrument by remember { mutableStateOf<String?>(null) }
+    var selectedSection by remember(p.id) { mutableStateOf("") }
+    var editingTx by remember { mutableStateOf<String?>(null) }
+    var txError by remember { mutableStateOf("") }
+    var deleteInstrument by remember { mutableStateOf<String?>(null) }
 
     val kinds = listOf(
         "fund" to "صندوق استثماري", "gold" to "ذهب", "cert" to "شهادات/وثائق",
@@ -94,12 +99,24 @@ fun PortfolioScreen(
             }
         }
 
-        // ==== tools list ====
+        PortfolioEditor(p, onMutate)
+        editInstrument?.let { id ->
+            s.ins.find { it.id == id }?.let { instrument ->
+                InstrumentEditor(instrument, p, onMutate) { editInstrument = null }
+            }
+        }
         Card2 {
             SectionTitle("الأدوات (${mine.size})")
             Spacer(Modifier.height(8.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip("جميع الأدوات", selectedSection.isBlank()) { selectedSection = "" }
+                p.secs.forEach { sec ->
+                    Chip("${sec.name} (${mine.count { it.sec == sec.id }})", selectedSection == sec.id) { selectedSection = sec.id }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             if (mine.isEmpty()) Muted("لا توجد أدوات بعد. أضف أول أداة بالزر بالأسفل.", size = 12)
-            mine.forEach { i ->
+            mine.filter { selectedSection.isBlank() || it.sec == selectedSection }.forEach { i ->
                 val st2 = Finance.insStats(i, s.fx.now)
                 Column(
                     Modifier.fillMaxWidth().background(t.card2, chipShape).padding(12.dp),
@@ -123,7 +140,22 @@ fun PortfolioScreen(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Muted("تكلفة ${fmt(st2.cost, 0)} · XIRR ${pc(st2.xr)}", size = 11)
                         Text("حركة وتحديث", color = t.primary, fontSize = 12.sp,
-                            modifier = Modifier.clickable { showTxFor = i })
+                            modifier = Modifier.clickable { showTxFor = i; editingTx = null; txError = "" })
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("تعديل الأداة", editInstrument == i.id) { editInstrument = i.id }
+                        Chip("القيمة الحالية", false) { editCvFor = i; cvVal = if (i.cvDate.isNotBlank()) i.cv.toString() else "" }
+                        Chip("حذف", deleteInstrument == i.id) { deleteInstrument = if (deleteInstrument == i.id) null else i.id }
+                    }
+                    if (deleteInstrument == i.id) {
+                        Muted("سيُحذف ${i.name} وجميع حركاته. لا يمكن التراجع عن ذلك.")
+                        BigButton("تأكيد حذف الأداة", danger = true) {
+                            onMutate { state -> state.ins.removeAll { it.id == i.id } }
+                            if (showTxFor?.id == i.id) showTxFor = null
+                            if (editInstrument == i.id) editInstrument = null
+                            if (editCvFor?.id == i.id) editCvFor = null
+                            deleteInstrument = null
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -147,19 +179,21 @@ fun PortfolioScreen(
                 Spacer(Modifier.height(6.dp))
                 if (p.secs.isNotEmpty()) {
                     Muted("القسم", size = 11)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        p.secs.take(3).forEach { sec ->
-                            Chip(sec.name, newSec == sec.id, Modifier.weight(1f)) { newSec = sec.id }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        p.secs.forEach { sec ->
+                            Chip(sec.name, newSec == sec.id) { newSec = sec.id }
                         }
                     }
                     Spacer(Modifier.height(6.dp))
                 }
                 BigButton("حفظ الأداة") {
                     if (newName.isNotBlank()) onMutate { st3 ->
-                        st3.ins.add(Instrument(
+                        val instrument = Instrument(
                             id = uid(), pf = p.id, name = newName.trim(), kind = newKind,
                             sec = newSec.ifBlank { p.secs.firstOrNull()?.id ?: "" },
-                        ))
+                        )
+                        st3.ins.add(instrument)
+                        editInstrument = instrument.id
                         newName = ""; newSec = ""; showAddIns = false
                     }
                 }
@@ -214,7 +248,7 @@ fun PortfolioScreen(
                             Spacer(Modifier.width(10.dp))
                             Text("تعديل", color = t.primary, fontSize = 11.sp, modifier = Modifier.clickable {
                                 txDate = tx.d; txAmt = tx.amt.toString(); txUnits = if (tx.units > 0) tx.units.toString() else ""
-                                txType = tx.typ; txNote = tx.note
+                                txType = tx.typ; txNote = tx.note; editingTx = tx.id; txError = ""
                             })
                         }
                     }
@@ -241,16 +275,42 @@ fun PortfolioScreen(
                 Spacer(Modifier.height(6.dp))
                 Field(txNote, { txNote = it }, "ملاحظة (اختياري)")
                 Spacer(Modifier.height(8.dp))
-                BigButton("حفظ العملية") {
-                    val a = txAmt.toDoubleOrNull() ?: return@BigButton
-                    val u = txUnits.toDoubleOrNull() ?: 0.0
-                    onMutate { st3 ->
-                        st3.ins.find { it.id == ins.id }?.tx?.add(com.mizanati.invest.data.Tx(
-                            id = uid(), d = txDate, amt = a, typ = txType, units = u, note = txNote,
-                            fx = if (p.cur == "USD") s.fx.now else 0.0,
-                        ))
+                if (txError.isNotBlank()) Text(txError, color = t.red)
+                BigButton(if (editingTx == null) "حفظ العملية" else "حفظ تعديل العملية") {
+                    val amount = txAmt.toDoubleOrNull()
+                    val units = if (txUnits.isBlank()) 0.0 else txUnits.toDoubleOrNull()
+                    if (amount == null || !amount.isFinite() || amount == 0.0 || units == null || !units.isFinite() || units < 0 || Finance.parseDate(txDate) == null) {
+                        txError = "أدخل مبلغًا وتاريخًا وكمية صحيحة"
+                        return@BigButton
                     }
-                    txAmt = ""; txUnits = ""; txNote = ""
+                    val current = s.ins.find { it.id == ins.id } ?: return@BigButton
+                    val proposed = current.copy(tx = current.tx.filter { it.id != editingTx }.toMutableList())
+                    proposed.tx.add(com.mizanati.invest.data.Tx(id = editingTx ?: uid(), d = txDate, typ = txType, units = units, amt = amount))
+                    var balance = 0.0
+                    var invalidSale = false
+                    proposed.tx.sortedBy { it.d }.forEach { transaction ->
+                        if (transaction.typ == "buy") balance += transaction.units
+                        if (transaction.typ == "sell" && transaction.units > 0) {
+                            balance -= transaction.units
+                            if (balance < -1e-9) invalidSale = true
+                        }
+                    }
+                    if (invalidSale) {
+                        txError = "كمية البيع أكبر من الرصيد المتاح في تاريخ العملية"
+                        return@BigButton
+                    }
+                    val a = if (txType in listOf("sell", "coupon", "maturity", "rent")) -kotlin.math.abs(amount) else kotlin.math.abs(amount)
+                    onMutate { st3 ->
+                        st3.ins.find { it.id == ins.id }?.let { tool ->
+                            val old = tool.tx.find { it.id == editingTx }
+                            val tx = com.mizanati.invest.data.Tx(
+                                id = old?.id ?: uid(), d = txDate, amt = a, typ = txType, units = units, note = txNote,
+                                fx = old?.fx ?: if (p.cur == "USD") s.fx.now else 0.0,
+                            )
+                            if (old == null) tool.tx.add(tx) else tool.tx[tool.tx.indexOf(old)] = tx
+                        }
+                    }
+                    txAmt = ""; txUnits = ""; txNote = ""; editingTx = null; txError = ""
                 }
                 Spacer(Modifier.height(8.dp))
                 BigButton("إغلاق", danger = true) { showTxFor = null }

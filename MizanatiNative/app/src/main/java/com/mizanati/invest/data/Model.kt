@@ -119,6 +119,7 @@ data class AppState(
     var inflationMonthly: Double = 0.0,
     var inflationPeriod: String = "",
     var owner: String = "",
+    var sourceJson: String = "{}",
 )
 
 fun uid(): String = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8)
@@ -223,11 +224,34 @@ object StateJson {
                 }
             })
         })
-        return o
+        return merge(JSONObject(s.sourceJson), o)
     }
 
-    fun fromJson(o: JSONObject): AppState {
+    private fun merge(original: JSONObject, current: JSONObject): JSONObject {
+        current.keys().forEach { key ->
+            val value = current.get(key)
+            val previous = original.opt(key)
+            original.put(key, when {
+                value is JSONObject && previous is JSONObject -> merge(previous, value)
+                value is JSONArray && previous is JSONArray -> JSONArray().apply {
+                    for (index in 0 until value.length()) {
+                        val item = value.get(index)
+                        val old = if (item is JSONObject) (0 until previous.length())
+                            .mapNotNull { previous.optJSONObject(it) }
+                            .firstOrNull { it.optString("id") == item.optString("id") } else null
+                        put(if (item is JSONObject && old != null) merge(old, item) else item)
+                    }
+                }
+                else -> value
+            })
+        }
+        return original
+    }
+
+    fun fromJson(source: JSONObject): AppState {
+        val o = LegacyImport.normalize(source)
         val s = Seed.state()
+        s.sourceJson = o.toString()
         s.split = o.optInt("split", 80); s.v6 = o.optInt("v6", 1)
         s.theme = o.optString("theme", "light")
         s.inflation = o.optDouble("inflation", 0.0)

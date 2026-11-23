@@ -9,7 +9,7 @@ object Finance {
         val f = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         f.isLenient = false
         f.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        f.parse(s)?.time
+        if (!Regex("\\d{4}-\\d{2}-\\d{2}").matches(s)) null else f.parse(s)?.time
     } catch (e: Exception) { null }
 
     fun monthsBetween(a: String, b: String): Int {
@@ -62,42 +62,16 @@ object Finance {
 
     // ---- instrument valuation ----
 
-    /** Cost basis of an instrument (positive buys, negative sells). */
-    fun cost(i: Instrument): Double = i.tx.sumOf { it.amt }
+    fun cost(i: Instrument): Double = InstrumentLedger.calculate(i).cost
 
-    fun units(i: Instrument): Double = i.tx.filter { it.typ == "buy" || it.typ == "sell" }.sumOf { it.units }
+    fun units(i: Instrument): Double = InstrumentLedger.calculate(i).units
 
     fun avgPrice(i: Instrument): Double {
-        val u = units(i); return if (u > 0) cost(i) / u else 0.0
+        val ledger = InstrumentLedger.calculate(i)
+        return if (ledger.units > 0) ledger.cost / ledger.units else 0.0
     }
 
-    /** Current market value of an instrument in its own currency. */
-    fun value(i: Instrument): Double = when (i.kind) {
-        "gold" -> if (i.mode == "p" && i.price > 0) units(i) * i.price else i.cv
-        "cert" -> {
-            // capitalization / coupon accrual
-            val u = units(i)
-            if (u > 0 && i.price > 0) u * i.price
-            else if (i.cv > 0) i.cv
-            else {
-                val m = monthsBetween(i.start.ifBlank { today() }, today())
-                if (i.rate > 0 && m > 0) {
-                    val base = cost(i)
-                    if (i.cSum) base * Math.pow(1 + i.rate / 100.0 / 12.0, m.toDouble())
-                    else base + base * i.rate / 100.0 / 12.0 * m
-                } else cost(i)
-            }
-        }
-        "prop" -> {
-            if (i.cv > 0) i.cv
-            else {
-                val yrs = max(0.0, monthsBetween(i.buyD.ifBlank { today() }, today()) / 12.0)
-                val p0 = if (i.price0 > 0) i.price0 else cost(i)
-                p0 * (1 + i.ret / 100.0 * yrs) - (i.feePct / 100.0 * p0)
-            }
-        }
-        else -> if (i.cv > 0) i.cv else cost(i)
-    }
+    fun value(i: Instrument): Double = InstrumentLedger.calculate(i).value
 
     data class InsStats(
         val cost: Double, val value: Double,
@@ -107,24 +81,13 @@ object Finance {
     )
 
     fun insStats(i: Instrument, fxNow: Double): InsStats {
-        val cost = cost(i)
-        val value = value(i)
-        val realized = i.tx.filter { it.typ == "sell" || it.typ == "coupon" || it.typ == "maturity" || it.typ == "rent" }
-            .sumOf { -it.amt }
-        val unrealized = value - (cost + realized.coerceAtLeast(0.0)).let { if (realized > 0) cost else value - value }
-        val tot = realized + (value - cost) - if (realized > 0) 0.0 else 0.0
-        val flows = mutableListOf<Pair<Long, Double>>()
-        i.tx.forEach { t -> parseDate(t.d)?.let { d -> flows.add(Pair(d, -t.amt)) } }
-        parseDate(i.cvDate).let { d -> if (value > 0) flows.add(Pair(d ?: System.currentTimeMillis(), value)) }
-        val xr = xirr(flows)
-        val age = i.tx.minOfOrNull { daysBetween(it.d, today()) } ?: 0
-        val coupon = if (i.kind == "cert" && i.rate > 0 && !i.cSum) {
-            val m = monthsBetween(i.start.ifBlank { today() }, today())
-            cost * i.rate / 100.0 / 12.0 * max(0, m)
-        } else 0.0
-        val rentNet = if (i.kind == "prop") i.rent - i.expM else 0.0
-        val rentTotal = if (i.kind == "prop") rentNet * max(0, monthsBetween(i.rentStart.ifBlank { today() }, today())) else 0.0
-        return InsStats(cost, value, realized, unrealized, tot, xr, age, coupon, rentNet, rentTotal)
+        val now = System.currentTimeMillis()
+        val ledger = InstrumentLedger.calculate(i, now)
+        val flows = ledger.flows.toMutableList()
+        if (ledger.value > 0) flows.add(now to ledger.value)
+        val unrealized = ledger.value - ledger.cost
+        return InsStats(ledger.cost, ledger.value, ledger.realized, unrealized,
+            ledger.realized + unrealized, xirr(flows), ledger.age, ledger.coupon, ledger.rent, ledger.rentTotal)
     }
 
     fun pfTgt(p: Portfolio): Double = p.tAmt
